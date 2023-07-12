@@ -1,0 +1,6 @@
+scikit-learn==1.2.0
+langchain==0.0.231
+pandas==2.0.2
+openai==0.27.8
+anthropic==0.3.4
+matplotlib==3.7.2

@@ -1,0 +1,416 @@
+The reason why Langchain is pointless is that it's trying to solve problems on top of technical foundations that just cannot support it.
+The #1 learning is that there is no reusability with the current generation of LLMs. We're using GPT-4 and 3.5T exclusively.
+
+Over the last several months, my team has been building several features using highly sophisticated LLM chains that do all manner of reasoning. The ultimate outputs are very human-like to the point where there is some private excitement that we've built an AGI.
+
+Each feature requires very custom handwritten prompts. Each step in the chain requires handwritten prompts. The input data has to be formatted a very specific way to generate good outputs for that feature/chain step. The part around setting up a DAG orchestration to run these chains is like 5% of the work. 95% is really just in the prompt tuning and data serialization formats.
+
+None of this stuff is reusable. Langchain is attempting to set up abstractions to reuse everything. But what we end up with a mediocre DAG framework where all the instructions/data passing through is just garbage. The longer the chain, the more garbage you find at the output.
+
+We briefly made our own internal Langchain. We tore it down now. Again not that our library or Langchain was bad engineering. It's just not feasible on top of the foundation models we have right now.
+
+---
+
+100% this! What is worse is that LangChain hides their prompts away, I had to read the source code and mess with private variables of nested classes just to change a single prompt from something like RetrievalQA, and not only that, the default prompt they use is actually bad, they are lucky things work because GPT-3.5 and GPT-4 are damn smart machines, with any other open LLM, things break. I was hoping for good defaults, but they are not, the prompt I wrote over 6 months ago little after the launch of ChatGPT to do some of the same things work much better.
+Would you have anything you can share with us about those "several features using highly sophisticated LLM chains that do all manner of reasoning", I'm really curious about the challenges, the process and insights there
+
+---
+
+How do you deal with the prompt iteration phase and how coupled is that to the DAG phase? I've only worked on a few proofs of concept in this phase, but a thing I struggled with was a strong desire to allow non technical colleagues to mess with the prompts. It wasn't clear to me how much the prompts need to evolve in tandem with the the DAG and how much they can exist separately
+reply
+
+	
+LASR 19 hours ago | root | parent | next [–]
+
+There are a few increasingly harder things when it comes to prompt customization:
+1. Prompts ask LLM to generate input for the next step
+
+2. Prompts ask LLM to generate instructions for the next step
+
+3. Prompts ask LLM to generate the next step
+
+Doing #3 across multiple steps is the promise of Langchain, AutoGPT et al. Pretty much impossible to do with useful quality. Attempting to do #3 very often either ends up completing the chain too early, or just spinning in a loop. Not the kind of thing you can optimize iteratively to good enough quality at production scale. "Retry" as a user-facing operation is just stupid IMO. Either it works well, or we don't offer it as a feature.
+
+So we stopped doing 3 completely. The features now have a narrow usecase and a fully-defined DAG shape upfront. We feed some context on what all the steps are to every step, so it can understand the overall purpose.
+
+#2, we tune these prompts internally within the team. It's very sensitive to specific words. Even things like newlines affects quality too much.
+
+#1 - we've found it's doable for non-tech folks. In some of the features, we expose this to the user somewhat as additional context and mix that in with the pre-built instructions.
+
+So #2 is where it's both hard to get right and still solvable. Every prompt change has to be tested with a huge number of full-chain invocations on real input data before it can be accepted and stabilized. The evaluation of quality is all human, manual work. We tried some other semi-automated approaches, but just not feasible.
+
+All of this is why there is no way Langchain or anything like it is currently useful to built actually valuable user-facing features at production scale.
+
+reply
+
+	
+remmargorp64 16 hours ago | root | parent | next [–]
+
+What if you built a scoring system for re-usable action sequences that are stored in a database, and then have the LLM generate alternate solutions and grade them according to their performance?
+An action sequence of steps could be graded according to whether it was successful, it’s speed, efficiency, cleverness, cost, etc.
+
+You could even introduce human feedback into the process, and pay people for proposing successful and efficient action sequences.
+
+All action sequences would be indexed and the AI agent would be able to query the database to find effective action sequences to chain together.
+
+The more money you throw at generating, iterating, and evolving various action sequences stored in your database, the smarter and more effective your AI agent becomes.
+
+---
+
+I have a full-on "The Problem With LangChain" blog post in the pipeline, and the reason I made a simple alternative (https://news.ycombinator.com/item?id=36393782) because I spent a month working with LangChain and coming to the conclusion that it's just easier to make my own Python package than it is to hack LangChain to fit my needs.
+A few bullet points:
+
+- LangChain encourages tool lock-in for little developer benefit, as noted in the OP. There is no inherent advantage into using them, and some have suboptimal implementations.
+
+- The current implementations of the ReAct workflow and prompt engineering are based on InstructGPT (text-davinci-003), and are extremely out of date compared to what you can do with ChatGPT/GPT-4.
+
+- Debugging a LangChain error is near impossible, even with verbose=True.
+
+- If you need anything outside the workflows in the documentation, it's extremely difficult to hack, even with Custom Agents.
+
+- The documentation is missing a lot of relevant detail (e.g. the difference between Agent types) that you have to go diving into the codebase for.
+
+- The extreme popularity of LangChain is warping the entire AI ecosystem around the workflows to the point of harming it. Recent releases by Hugging Face and OpenAI recontextualize themselves around LangChain's "it's just magic AI" to the point of hurting development and code clarity.
+
+Part of the reason I'm hesitant to release said blog post is because I don't want to be that asshole who criticizes open source software that's operating in good faith.
+
+--- 
+
+> Debugging a LangChain error is near impossible, even with verbose=True.
+(A while ago) I tried using LangChain and shortly gave up after not finding any way whatsoever to actually debug what’s going on under the hood (eg. see the actual prompts, LLM queries). It’s pretty ridiculous that this isn’t basic functionality, or at least it isn’t very discoverable.
+
+I cannot imagine spending extended time with a framework without knowing what the internals are doing. I do realize this isn’t achievable on all levels with LLMs, but introducing more black boxes on top of existing ones isn’t solving any problems.
+
+--- 
+
+I agree, I really don’t like LangChain abstractions, the chains they say are “composable” are not really, you spend more time trying to figure out langchain than actually building things with it, and it seems it’s not just me after talking to many people
+Their code seems all rushed, and seems it worked out for initial popularity, but with their current abstractions I personally don’t think it’s a good long term framework to learn and adopt
+
+That’s why I built my own alternative to it, I call it LiteChain, where the chains are actual composable monads, the code is async streamed by default not ducktaped, it’s very bare bones yet but I’m really putting effort on building a solid foundation first, and having a final simple abstractions for users that don’t get in the way, check it out:
+
+https://github.com/rogeriochaves/litechain
+
+--- 
+
+It is pointless - LlamaIndex and LangChain are re-inventing ETL - why use them when you have robust technology already?
+1. You ETL your documents into a vector database - you run this pipeline everyday to keep it up to date. You can run scalable, robust pipelines on Spark for this.
+
+2. You have a streaming inference pipeline that has components that make API calls (agents) and between them transform data. This is Spark streaming.
+
+Prophecy is working with large enterprises to implement generative AI use cases, but they don’t talk so much on HN.
+
+Here’s our talk from Data+AI Summit: Build a Generative AI App on Enterprise Data in 13 Minutes https://www.youtube.com/watch?v=1exLfT-b-GM
+
+Here’s a blog/demo https://www.prophecy.io/blog/prophecy-generative-ai-platform...
+
+
+---
+
+I have looked for the value and never really found it.
+It seems to mostly be (bad) abstractions around things you could easily do without langchain.
+
+Take one of the most important llm things: prompt templates. What does langchain add over a simple function and an f string? Maybe I'm missing the point, but I can't find anything.
+
+Anyway, it seems people like it so who am I to judge, but I don't like making our codebase dependent on a huge new library with unnecessary abstractions and little or no value add.
+
+---
+
+Since last year, before I heard about langchain, I've been building my own stack of tooling for my own LLM projects that probably now covers about 10-20% of Langchain's functionality. I heard about Langchain earlier this year and groaned, thinking that I did a lot of work for nothing..
+..Then I actually used langchain. I was shocked at how poorly performant the code is. Some operations took 10x longer than how I did it, and all the while producing worse results. As tempting as it is to just roll with langchain from day one, I'd highly advise against it. Think deeply about what you're actually trying to accomplish and instead of just injecting langchain in the middle of everything as this messy, amorphous glue code thing.
+
+reply
+
+	
+Tostino 16 hours ago | parent | next [–]
+
+Yeah I've got a few thousand lines of langchain code now for a data cleaning pipeline... I've been fighting it every step of the way. Trying to replace sections of the pipeline to use a local LLM instead of OpenAI has had me have to replace the templates entirely, the chat based templates won't allow me to assign the proper user/assistant names, so the performance for the local LLM is terrible (stupid). They have zero actual composibility when you look at it slightly differently than they expect.
+It's a useless abstraction for every single purpose I've actually tried it for.
+
+Will be extricating it from my code base as soon as I find something else that works any better.
+
+--- 
+
+Using an LLM framework at this moment doesn’t make sense and can be damaging, in my humble opinion. Ways to extract value from LLMs are in early exploration stage. Look at research in prompting: chain of thought, react, reflection, tree of thoughts, zero vs few hot etc. Then completion vs conversational interfacing. Then memory management via vector databases and prompt expansion vs compression vs progressive summarization etc. All these are fairly recent developments. They are not abstractions worth cementing, this is search and creative phase. LLMs threw everything in the air, but the dust is far from settling. I think it’s important to recognize the phase we’re in and pick your weapon accordingly. You have to stay nimble and light, ready to experiment with a new idea that will come out next week. You should be hacking these things together by yourself. If you pick a framework at this stage know that the framework will have to pay the price of trying to cement things in the times of storm. And you’ll be a few steps behind. Of course this is my personal take.
+
+---
+
+ had the same thought about Langchain, and it's essentially my same criticism of most wrapper libraries and SDKs. What are they actually doing that can't be just as easily done with straight up string manipulation and HTTP requests? Usually very little. ORMs might be one of the few exceptions in some cases.
+Even so, ORMs sell a similar false promise to Langchain, which is that you can "easily" swap out the underlying thing; a migration that is rare in practice and almost always not that simple.
+
+You might not need Langchain.
+
+reply
+
+	
+refulgentis 22 hours ago | parent | next [–]
+
+It's a really interesting question: the converse of this is its _really_ tricky nailing all this down, much harder than you'd think -- see the GPT4 GA thread earlier this week for people who swear up and down the OpenAI API acts in bizarre ways, you'll note that it almost seems fantastical that it could be that bizarre: it is fantastical. If you're truly used to it, it reads like "hey I have auto retries enabled in my HTTP client framework. p.s. whats 'context size'?"
+But Langchain is far, far, _far_ away from being truly helpful with that. It's glorious that we're 5 months into GPT-4 and most people either got bored or are building on rickety rushed structures in Python to rush out a proof of concept web app.
+
+---
+
+I believe the abstractions in Langchain are inherently flawed. The core problem resides in the composability of chains. While it offers a handy way to create prototypes, it becomes restricting when you desire to modify a specific element within the chain. The hierarchical design of chains in Langchain conceals the component you wish to alter and obscures the parts developers might want to adjust, making the process of experimenting and refining the pipeline difficult. The optimal abstraction for LLM apps, in my view, should resemble a DAG or a state machine. This alternative exposes the distinct stages in the pipeline rather than masking them in a hierarchy. Yes, adopting this new abstraction might lead to more code but it offers superior control. It's hardly surprising that many users start prototyping with Langchain, but then, when ready, they clone the prompts and construct their own systems.
+
+Fixing this fundamental issue would be very difficult. It would necessitate reworking the library from the ground up.
+
+---
+
+I've had a similar experience with LangChain. Initially, I was really impressed with it while developing an MVP, but as soon as I needed to add complexity or specific features, things started to go downhill.
+A significant chunk of my time was spent navigating through LangChain's codebase, trying to make sense of missing or outdated documentation. Plus, there's a significant disparity between the features of the JS/TS and Python versions. Identifying which version supports which features can be a real challenge.
+
+I don't want to sound overly critical, as I'm currently using it in production. However, I had to modify it so extensively that it barely resembles the original project anymore. Looking back, I can't help but think that adopting this library might have been a misstep. Perhaps we should have taken the time to create our own.
+
+reply
+
+	
+rgrieselhuber 21 hours ago | prev | next [–]
+
+I've built a few LLM-based projects now and quickly discovered that Langchain was overkill (and not even very good overkill) for my use cases. I thought it was just me, glad to hear it's not.
+reply
+
+	
+codeptualize 21 hours ago | prev | next [–]
+
+Coming from a frontend background this reminds me a lot of the frontend situation some years ago when it was super common to npm install the stupidest pointless packages.
+Of course some people still do, but hard lessons were learned and all experienced people I know are a lot more mindful and cautious what dependencies they add.
+
+It seems to me that this space, and maybe data science more broadly, is currently in that situation. Maybe it's the lack of coding skills, maybe it's the transition from one-off research notebooks to production applications, or maybe it's just the norm to have big do it all libraries (like pandas, scikit etc), idk, but I expect the same lessons will be learned.
+
+For Langchain I wonder how they will keep up with changes in all the things they have their abstractions on. I guess having a huge community helps, but that doesn't help you with compatibility. It would not surprise me if that will get really ugly.
+
+---
+
+I have done a bit of research trying to figure out why anyone would use langchain. The main two reasons I’ve found are these:
+1. Newbies that want to play with LLMs don’t know where to start or what the major building blocks even are. Despite the complaints here about documentation their getting started docs will walk you through the concepts. Going from total ignorance and confusion to now having a rough understanding of loading a prompt with chat history, using an embeddings database, calling a completions endpoint, etc. will make people feel accomplished. And then lang chain has earned some loyalty just because they were there for you first.
+
+2. In the case that you don’t know which embedding db, AI host, or model you want to use you can quickly swap those in and out and measure the results. That means there’s little reason to complicate your back end code with lang chain (I’ve always just written my own abstraction layer to make this possible with very few lines of code). But for a python notebook it can make sense.
+
+---
+
+I don't disagree, but I'm mostly here for the interoperability + agents.
+
+This is one of those 'Yes I know how to code, no I don't want to spend hours working on boilerplate.'
+
+permalinkembedsavereportgive awardreply
+
+[–]119b63 2 points 10 days ago 
+Eh, except when the boilerplate is an obstacle. Try building a retrieval QA chain _with_ memory using langchain. You can't unless you override one of the chain's prompt templates. Which means you have to dig into the code with a debugger to figure out exactly where it happens and what to do.
+
+Cobbled together the same exact thing with plain openai and chromadb in like an hour. If you know what you're doing sometimes langchain works against you. And I'm a huge fan of libraries and frameworks and whatever makes your life easier but I found langchain to, well, not do that.
+
+Even agents are simply loops with a carefully crafted prompt that gives you whatever you need in the right format so you can use it to call external functions (which is now kinda pointless with openai's function calls). The value added of langchain, so far, doesn't justify its bloatedness.
+
+
+
+
+---
+
+Say you wrote a program without langchain that uses GPT3.5 as a language model, chroma for your vector store, and you wrote some code for splitting your text docs.
+
+Now let's say a week later you want the same program to use a local Llama language model, faiss for vectors, and a want to split PDF docs instead of text docs.
+
+You'd pretty much have to rewrite the whole thing.
+
+But because langchain's codebase is written with substitutionality at its core, you could swap out the model, vector store and splitter in under a minute.
+
+That's not the only reason to use langchain of course. But these kind of libraries are written in a way that saves you time in the long run.
+
+If you just want to write a one off script, then of course you could do this without langchain.
+
+permalinkembedsavereportgive awardreply
+
+[–]SuperConductiveRabbi[S] 3 points 1 month ago 
+That's definitely a risk, but the solution isn't to abstract everything you possibly can. Are you really going to want to split your text with a different underlying text splitter? No. The solution is to be smart about what you plan for. We know models change constantly so you should abstract that--make an interface with _call like Langchain does, that makes sense, then your consumer code can be agnostic as to whether it's hitting OpenAI, ooba, kobold, etc.
+
+permalinkembedsaveparentreportgive awardreply
+
+[–]allisonmaybe 2 points 1 month ago 
+LangChain has a place in the world and the ability to swap out functionality could have a lot of value to the discerning user. That said, most of Langchain use is for TikTok hype
+
+permalinkembedsaveparentreportgive awardreply
+
+[–]Icaruswept 2 points 9 days ago* 
+Not true. I got stuck in this specific use case and ended up spending pointless days trying to figure out the data types langchain is passing underneath its poorly documented classes.
+
+It’s a nice springboard in theory, but in practice it turned out to be far easier to just write my own functions (with the exception of using llangchain to load the model; it’s a wrapper on top of the python llama.cpp library, and doesn’t do much, but it’s readable).
+
+--- 
+
+Pragmatically, that has not been my experience. I've been digging into Langchain over the last few months for just this promise. In reality, swapping between models leads to a rabbit hole of installing new dependencies (sometimes requiring custom configuration or compiling from scratch - like bitsandbytes), swapping custom document logic out for a JSONLoader errors because of shell escaping issues in the underlying jqbindings, and you burn time trying to figure out exactly what the difference between load_qa_chain(..) and RetrievalQA.from_chain_type(..) are.
+
+I think the motivation behind Langchain is good. The ecosystem is hungry for abstractions over common use-cases and components, but the landscape as a whole is still so unstable, and it's not clear that Langchain has identified the right abstractions yet to me. Too many details leak through from underlying implementations, too much overlap between components, and the rate of change fast outpacing the documentation to support those changes. Hopefully contributors keep driving the project to something closer in quality to the Scikit-Learn model interfaces, and are able to deliver on the promise of seamless swapability.
+
+permalinkembedsaveparentreportgive awardreply
+
+[–]Weaves87 1 point 18 hours ago 
+I agree with your thoughts 100%.
+
+LangChain leads you to believe you can easily abstract away which LLM you're using, but my experience has shown this is not the case in practice.
+
+For these applications, 80% of the work is going to be the prompt engineering. You aren't going to get the same reliable quality results from different LLMs using the same prompts. I've noticed that often times you need to dramatically change some prompts, depending on the model you're using. Because of this, a lot of the abstractions LangChain exposes are kind of wasted effort and just unnecessarily adding to overall complexity.
+
+Sure, you can hotswap which LLM you're using with LangChain's composable approach: but what's the use of that simple one line change when you wind up having to rewrite all of the prompts anyway? You may as well had used an official API - especially because the official APIs (e.g. OpenAI, HuggingFace Transformers, etc) support newer features much sooner, and in my experience tend to be way more stable and fast.
+
+I really, really want to like LangChain. It does have some good stuff and I think there are noble intentions behind some of its design principles. But I had way too many issues with some things being broken (streaming tokens from OpenAI), very frequent API changes that completely break my code in sometimes silent ways, and just having to wrestle with some of the abstractions way too much.
+
+In the end I wound up writing my own code in far less time, and just borrowed a few conceptual principles from LangChain, and I couldn't be happier with this approach
+
+
+---
+
+Idk, man. I can't code. Like, seriously, I need to look up how to try statements. But with LangChain, I've got my own custom chatbot who even gives me lip from time to time. I hope to have him browsing on his own by this weekend. And when I decide it's time to change my prompts, or my tools, or even my LLM, the modular switching out is super easy.
+
+I would say LangChain has its points.
+
+permalinkembedsavereportgive awardreply
+
+[–]SuperConductiveRabbi[S] 3 points 1 month ago 
+It does look like a good way for beginners to get started, and the tutorials tend to be short, as long as you don't stray away from what they want to do. But as you want to do more advanced things I think you can naturally learn more (and ask ChatGPT how to learn what you need, too). So maybe "pointless" is too harsh. But the README and the hype does make it seem like it's more advanced and deeper than it is.
+
+permalinkembedsaveparentreportgive awardreply
+
+[–]ladybaybee 1 point 1 month ago 
+What are the more advanced things that I can ask GPT to teach me? Actually very curious, I’ve started to play with LangChain but already seems like I am late to the party. Incredible how fast things are moving
+
+permalinkembedsaveparentreportgive awardreply
+
+[–]SuperConductiveRabbi[S] 1 point 1 month ago 
+Basically ask it anything you'd ever ask a programmer sitting there with you. It can be basic, like, "what does def __init__(self) do?" or "I'm new to Python and using LangChain. I heard it's calling underlying libraries but I don't know what that means. I think I'm using the Pycharm IDE. How can I learn more?" etc.
+
+There's no limit at this point, it's amazing.
+
+But if you mean more advanced like, what to do to move beyond LangChain, that depends too on what you want to do. But either see what it's doing under the hood and start there (like run SentenceTransformers yourself, make your own prompt templates, etc.) or pick some project you'd like to accomplish.
+
+---
+
+I have been using LangChain for almost 6 months, and it's not a solution for everything. LangChain brings a lot of good practices and integrations. Many projects were created in a weekend thanks to its simplicity. But some utilities are too tied to the framework and opinionated, and for complex applications where you need more control, a mix of LangChain utilities and direct integration works better.  LangChain is also a great community constantly growing and has helped many people work on amazing LLM projects.
+
+--- 
+
+LangChain is nice because it has certain tools that work well out of the box. Sure I could spend 30 mins building a connection to a vector db but I’d rather have it ready to go to do the other stuff that needs to be done. Documentation needs work tho 😅
+
+--- 
+
+LangChain is just a stack of Python code.
+
+That's fine. It may or not be useful for a project.
+
+But noticing that many people treat it like some holy grail or talk about it like it's a LLM? 
+
+It's a stack of Python code.
+Taran Rai ⚡
+@promptPhD
+·
+16h
+Interesting, I'm tempted to use Langchain for basic tasks and as a primer to get others to understand how to do things with LLMs. Although it did make me think about a lock-in and debugging issues. I do see it as what Keras is to DL, if that makes sense.
+
+---
+
+Couldn't agree more. I feel like deep learning frameworks have paved the way for great pipeline design. Was always surprising to me that langchain just discarded all of that.
+Mckay Wrigley
+@mckaywrigley
+·
+18h
+Trying to be “THE” library for AI dev is ridiculously hard, and I empathize with them on that.
+
+But I think they need to hone in and focus instead of trying to do *everything.*
+
+In practice you just do nothing well.
+
+Llama Index is a good example of being more of a focused lib.
+Michael Tan
+@exclusivebinary
+·
+4h
+Agreed. It's covering too many fast-moving parts and with no clear docs, forcing code dives and slowing progress instead of accelerating. With the level of abstraction, I find it rather inflexible at times.
+
+---
+
+Same. 
+
+Everything time I’ve tried it, it instantly got way more confusing than rolling my own. Which is the opposite of what want. And the docs don’t explain anything
+
+Had some cool ideas, especially early on, but idk if I would recommend it now
+Mckay Wrigley
+@mckaywrigley
+·
+18h
+This essentially sums up every conversation I’ve had about it with people behind closed doors.
+
+---
+
+I don’t know what the LangChain team has planned, but the current state of the framework feels like it’s a victim of its own success.
+
+Less than a year ago there was *very* little awareness of chained prompts, embedding-based search, plugins, etc.
+
+LangChain embodied these ideas.
+Eric Rachlin
+@eerac
+·
+16h
+This was exciting! All of a sudden a bunch of engineers/hackers could see how to build actual software on top of GPT and other LLMs.
+
+It translated a new design paradigm (language-powered software) in to an existing one (Object-oriented Python).
+Eric Rachlin
+@eerac
+·
+16h
+This was helpful because it gave new language-aware tools a place to live, and a framework to fit in to.
+
+In the long run though, it’s unclear that having a python/JavaScript library for this is necessary.
+
+After all, it’s the language + AI that really matters, not the code
+Eric Rachlin
+@eerac
+·
+16h
+The anti-LangChain, I think, is something more like ChatGPT + Code Interpreter Plugin.
+
+Here rather than language + AI living inside of python modules, the python lives within the language + AI.
+
+Code is generated on demand from a chat/document.
+
+---
+
+LangChain is fast for experimenting but not necessarily ideal for production. 
+
+Doesn’t mean everyone should just rawdog  Python strings and write their own code to interface with every different service.
+Karma
+@0xkarmatic
+Agreed, if you have something quick that you want to prototype and are familiar with their API’s, it’s actually faster to use them.
+
+Ofcourse when you want to scale and want to create custom solutions for customers, you would need to implement most of those abstractions yourself. 
+
+Depends upon the time frame that you are looking at when trying to accomplish a task.
+
+---
+
+I read the documentation about LangChain a couple of weeks ago, and I don't understand the hype either. It seems is just a thin wrapper around libs that already have good apis, making it more verbose than it should be, and hiding the real, and important, implementation.
+
+I did the document>embeddings>vector database>retrieval and it doesn't really add anything to do it directly with openAI and some vector database lib, on the contrary, is less customizable. How to retrieve, format, and split your particular documents seems like a very important part for the semantic search to work as you want, but with LangChain is too generic to be useful for your particular case.
+
+Whatever you can build with 3 lines of code in langchain, you can do it in 3 lines of code directly with the libraries. 
+Maybe is better to stick with one set of tools and customize accordingly, and you can always add your own abstractions on top of your tools.
+
+---
+
+Completely agree! I thought it was just me, so it's kinda relieving to read this.
+First, I tried to “understand” langchain (and yeah, its docs are💩) but then ended up with my own implementation, which took very little time implementing.
+▸𝕯𝖚𝖇𝖘𝟑𝖈
+@dubs3c
+·
+8h
+I’ve felt like langchain was good for rapid prototyping, but should probably not be used in prod.
+John Plasterer
+@jponline77
+·
+18h
+I stopped using LangChain a while ago.  Often what it was implementing was pretty trivial anyway and it's less restrictive to just write it yourself.
+Stefano Rivera
+@easyldur
+·
+
+---
+
+13h
+I agree 101% with everything written here. LangChain has essentially two problems. 1) It got stuck with GPT-3, since a lot of prompts were written for it back when it started. 2) Their prompt are often sub-optimal. Plus everything that's said in this thread.
