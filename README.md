@@ -1,4 +1,4 @@
-# ClusteringCollaboration
+# Analyzing User Question / Chat with LLMs to Improve Documentation
 
 Question-Answering (QA) systems like Mendable have revolutionized the way users interact with technical documentation. They also could provide valuable insights to companies about what users are confused by and what are the common question themes.
 
@@ -8,7 +8,7 @@ We test `clustering` (group similar questions together followedf by LLM-assisted
 
 Here is a summary of the approaches:
 
-![summary](https://github.com/mendableai/ClusteringCollaboration/assets/122662504/bf8f59f5-3280-4ca2-b9bd-1a1f3997ed30)
+![summary](https://github.com/mendableai/QA_clustering/assets/122662504/2f6d4408-2eb3-49b1-92c6-5b2c4a2c7260)
 
 See the two Jupyter notebooks in `notebooks`.
 
