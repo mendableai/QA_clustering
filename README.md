@@ -1,4 +1,4 @@
-# Analyzing User Question / Chat with LLMs to Improve Documentation
+# Summarizing User Questions with LLMs
 
 Question-Answering (QA) systems like Mendable have revolutionized the way users interact with technical documentation. They also could provide valuable insights to companies about what users are confused by and what are the common question themes.
 
